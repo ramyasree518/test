@@ -1,0 +1,65 @@
+---
+- hosts: all
+  gather_facts: true
+  vars:
+    user_data: []
+    host: []
+    u_d1: []
+    inst_id: []
+
+    template_list:
+      - "apache_ubuntu_ComplianceCheck"
+      - "apache_ubuntu_update"
+      - "apache_ubuntu_Status_check"
+  tasks:
+    - command: python projects_beta.py
+      args:
+        chdir: /var/lib/awx/projects/automate
+      register: projects
+
+    - name: create organizaton
+      tower_organization:
+        name: "{{item}}"
+        state: present
+        tower_config_file: "~/.tower_cli.cfg"
+      loop: "{{projects.stdout_lines}}"
+      ignore_errors: true
+
+    - name: create team for all openstack beta projects
+      command: tower-cli team create --name "{{item}}" --organization "{{item}}"
+      loop: "{{projects.stdout_lines}}"
+      
+    - tower_inventory:
+        name: "{{item}}"
+        organization: "{{item}}"
+        state: present
+        tower_config_file: "~/.tower_cli.cfg"
+      loop: "{{projects.stdout_lines}}"
+
+    - name: adding hosts to inventory
+      include_tasks: /var/lib/awx/projects/automate/beta_add_hosts.yml
+      loop: "{{projects.stdout_lines}}"
+      loop_control:
+        loop_var: outer_item
+
+    - name: Associate type as use to user in inventory
+      command: tower-cli role grant --type 'use' --team "{{item}}" --inventory "{{item}}"
+      ignore_errors: true
+      loop: "{{projects.stdout_lines}}"
+
+    - name: Associate type as workflow admin to organization in team
+      command:  tower-cli role grant --type 'workflow_admin' --team "{{item}}" --organization "{{item}}"
+      ignore_errors: true
+      loop:  "{{projects.stdout_lines}}"
+
+    - name: Associate type as project admin to organization in team
+      command:  tower-cli role grant --type 'project_admin' --team "{{item}}" --organization "{{item}}"
+      ignore_errors: true
+      loop:  "{{projects.stdout_lines}}"
+
+    - name: Associate type as execute to user in job template
+      include_tasks: /var/lib/awx/projects/automate/template_beta_loop.yml
+      ignore_errors: true
+      loop: "{{projects.stdout_lines}}"
+      loop_control:
+        loop_var: outer_item

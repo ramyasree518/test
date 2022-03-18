@@ -1,0 +1,30 @@
+- debug:
+    msg: "{{inst_details.split(',')[0]}}"
+
+- shell: "source openrc.sh && openstack server show '{{inst_details.split(',')[0]}}' -c properties -f value"
+  args:
+    executable: /bin/bash
+  register: var
+
+- debug:
+    msg: "{{var}}"
+
+- name: sorting the instance properties
+  set_fact:
+    inst_meta: "{{item.replace('{','').replace('}','').split(',')}}"
+  loop: "{{var.stdout_lines}}"
+
+- name: setting group names
+  set_fact:
+    group_names: "meta-{{item.replace(\"'\",'').replace(' ','').split(':')[0]}}_{{item.replace(\"'\",'').replace(' ','').split(':')[1]}}"
+  loop: "{{inst_meta}}"
+
+- debug:
+    msg: "{{item}}"
+  loop: "{{group_names}}"
+- name: creating groups
+  command: tower-cli group create --name "{{item}}" --inventory Engineering
+  loop: "{{group_names}}"
+
+- name: associating hosts with groups
+  command: tower-cli host associate --host "{{inst_details.split(',')[1]}}" --group "{{item}}"

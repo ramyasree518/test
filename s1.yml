@@ -1,0 +1,90 @@
+---
+- hosts: all
+  gather_facts: true
+  tasks:
+    - set_fact:
+        meta_names: []
+        group_names: []
+        inst_meta: ''
+        tower_group_list: []
+
+    - name: properties details of server
+      shell: "source openrc.sh && openstack server show def62ad8-4742-4dd8-8e52-7ab834abfad3 -c properties -f value"
+      args:
+        executable: /bin/bash
+      register: var
+
+    - debug:
+        msg: "{{var}}"
+
+    - name: sorting the instance properties
+      set_fact:
+        inst_meta: "{{item.replace('{','').replace('}','').replace(\"'\",'').replace(' ','').replace(':','_')}}"
+      loop: "{{var.stdout_lines}}"
+      ignore_errors: true
+      when: item != ''
+    - debug:
+        msg: "{{inst_meta}}"
+    - name: defining group list
+      set_fact:
+        meta_names: "{{inst_meta.split(',')}}"
+    - set_fact: 
+        group_names: "{{group_names}} + ['meta-{{item}}']"
+      loop: "{{meta_names}}"
+      when: inst_meta != ''
+
+    - debug:
+        msg: "{{group_names}}"
+
+
+    - name: creating groups
+      command: tower-cli group create --name "{{item}}" --inventory Engineering
+      loop: "{{group_names}}"
+      when: inst_meta!= ''
+
+    - name: inventory group list
+      command: tower-cli group list --inventory Engineering
+      register: grp_var
+
+    - name: sorting inventory group list
+      set_fact:
+        tower_group_list: "{{tower_group_list}} + ['{{item.split(' ')[1]}}']"
+      loop: "{{grp_var.stdout_lines[3:-1]}}"
+
+    - debug:
+        msg: "{{item}}" 
+      loop: "{{group_names}}"
+
+    - name: group id
+      command: tower-cli group get --name "{{item}}" --inventory Engineering
+      register: group_details
+      loop: "{{tower_group_list}}"
+      when: 'item in group_names'
+
+    - set_fact:
+        group_id: "{{item.split(' ')[0]}}"
+      loop: "{{group_details.stdout_lines[3:-1]}}"
+      when: 'group_details is defined'
+      ignore_errors: true
+
+    - debug:
+        msg: "{{group_details.results.stdout_lines}}"
+
+    - name: associating hosts with groups
+      command: tower-cli host associate --host 10.10.10.3 --group "{{group_id}}"
+      when: 'group_id is defined'
+      ignore_errors: true
+
+    - name: inventory group list
+      command: tower-cli group list --inventory Engineering 
+      register: grp_var
+
+    - name: sorting inventory group list
+      set_fact:
+        tower_group_list: "{{tower_group_list}} + ['{{item.split(' ')[1]}}']"
+      loop: "{{grp_var.stdout_lines[3:-1]}}"
+
+    - name: disassociate hosts from groups
+      command: tower-cli host disassociate --host 10.10.10.3 --group "{{group_id}}"
+      when: 'group_id is defined'
+      ignore_errors: true

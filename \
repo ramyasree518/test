@@ -1,0 +1,4 @@
+- set_fact:
+    user_data: "{{user_data}} + ['{{item.split(' ')[0]}},{{outer_item}}']"
+  loop: "{{t_u_id}}"
+  when: outer_item.split(',')[0] == item.split(' ')[1]

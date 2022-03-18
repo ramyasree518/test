@@ -1,0 +1,15 @@
+---
+- hosts: all
+  gather_facts: true
+  vars:
+    o_host: []
+    tower_host: []
+    user_data: []
+    u_d1: []
+    test: " none"
+  tasks:
+    - command: tower-cli group get --name meta-os_ubuntu --inventory Engineering 
+      register: var
+    
+    - debug:
+        msg: "{{var.stdout_lines}}"

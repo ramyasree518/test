@@ -1,0 +1,54 @@
+- set_fact:
+    meta_names: []
+    group_names: []
+    inst_meta: ''
+    tower_group_list: []
+
+- name: properties details of server
+  shell: "source openrc.sh && openstack server show d0dd1110-f224-4955-a1ae-9659b7b0dcb5 -c properties -f value"
+  args:
+    executable: /bin/bash
+  register: var
+
+- name: sorting the instance properties
+  set_fact:
+    inst_meta: "{{item.replace('{','').replace('}','').replace(\"'\",'').replace(' ','').replace(':','_')}}"
+  loop: "{{var.stdout_lines}}"
+  ignore_errors: true
+  when: item != ''
+
+- name: defining group list
+  set_fact:
+    meta_names: "{{inst_meta.split(',')}}"
+- set_fact: 
+    group_names: "{{group_names}} + ['meta-{{item}}']"
+  loop: "{{meta_names}}"
+  when: inst_meta != ''
+
+- name: creating groups
+  command: tower-cli group create --name "{{item}}" --inventory Engineering
+  loop: "{{group_names}}"
+  when: inst_meta!= ''
+
+- name: associating hosts with groups
+  command: tower-cli host associate --host "{{inst_details.split(',')[1]}}" --group "{{item}}"
+  loop: "{{group_names}}"
+  when: inst_meta!= ''
+
+- debug:
+    msg: "{{item}}"
+  loop: "{{group_names}}"
+- name: inventory group list
+  command: tower-cli group list --inventory Engineering
+  register: grp_var
+
+- name: sorting inventory group list
+  set_fact:
+    tower_group_list: "{{tower_group_list}} + ['{{item.split(' ')[1]}}']"
+  loop: "{{grp_var.stdout_lines[3:-1]}}"
+
+- debug:
+        # disassociate hosts from groups
+    msg: "{{inst_details.split(',')[1]}}"
+  loop: "{{group_names}}"
+  when: 'item not in {{tower_group_list}}'

@@ -1,0 +1,58 @@
+- set_fact:
+    meta_names: []
+    group_names: []
+    inst_meta: ''
+    tower_group_list: []
+    tower_list: []
+
+- name: properties details of server
+  shell: "source openrc.sh && openstack server show '{{inst_details.split(',')[0]}}' -c properties -f value"
+  args:
+    executable: /bin/bash
+  register: inst_prop
+
+- name: sorting the instance properties
+  set_fact:
+    inst_meta: "{{item.replace('{','').replace('}','').replace(\"'\",'').replace(' ','').replace(':','_')}}"
+  loop: "{{inst_prop.stdout_lines}}"
+  ignore_errors: true
+  when: item != '{}'
+
+- name: defining group list
+  set_fact:
+    meta_names: "{{inst_meta.split(',')}}"
+- set_fact:
+    group_names: "{{group_names}} + ['meta-{{item}}']"
+  loop: "{{meta_names}}"
+  when: inst_meta != ''
+
+- name: creating groups
+  command: tower-cli group create --name "{{item}}" --inventory "{{project_name}}"
+  loop: "{{group_names}}"
+  when: inst_meta!= ''
+
+- name: inventory group list
+  command: tower-cli group list --inventory "{{project_name}}"
+  register: grp_var
+
+- name: sorting inventory group list
+  set_fact:
+    tower_group_list: "{{tower_group_list}} + ['{{item.split(' ')[0]}},{{item.split(' ')[1]}}']"
+  loop: "{{grp_var.stdout_lines[3:-1]}}"
+
+- name: sorting inventory group list comparing with openstack group
+  include: /var/lib/awx/projects/automate/group_var.yml
+  loop: "{{tower_group_list}}"
+  loop_control:
+    loop_var: group_item
+
+- name: associating hosts with groups
+  command: tower-cli host associate --host "{{inst_details.split(',')[1]}}" --group "{{item.split(',')[0]}}"
+  loop: "{{tower_list}}"
+  when: inst_meta!= ''
+
+- name: disassociate hosts from groups
+  command: tower-cli host disassociate --host "{{inst_details.split(',')[1]}}" --group "{{item.split(',')[0]}}"
+  loop: "{{tower_group_list}}"
+  when: 'item not in tower_list'
+  ignore_errors: true

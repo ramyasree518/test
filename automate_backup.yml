@@ -1,0 +1,160 @@
+---
+- hosts: all
+  gather_facts: true
+  vars:
+    template_list:
+      - "apache_ubuntu_ComplianceCheck"
+      - "apache_ubuntu_update"
+      - "apache_windows_compliancecheck"
+      - "apache_windows_install"
+      - "apache_windows_update"
+      - "SMT_Start_Registration"
+    user_data: []
+    t_u_id: []
+    temp_name: []
+  tasks:
+    - command: python projects.py
+      args:
+        chdir: /var/lib/awx/projects/automate
+      register: projects
+
+    - command: python users.py
+      args:
+        chdir: /var/lib/awx/projects/automate
+      register: o_user
+
+    - name: creating user
+      command: tower-cli user create --username="{{item.split(',')[0]}}" --password="Admin#123" --email="admin@gmail.com"
+      loop: "{{o_user.stdout_lines}}"
+
+    - command: tower-cli user list -a
+      register: t_user_id
+
+    - name: removing spaces for tower user list
+      set_fact:
+        t_u_id: "{{t_u_id}} + ['{{item.strip()}}']"
+      loop: "{{t_user_id.stdout_lines[3:-1]}}"
+
+    - name: adding awx user id for openstack user data list
+      include_tasks: /var/lib/awx/projects/automate/user_loop.yml
+      loop: "{{o_user.stdout_lines}}"
+      loop_control:
+        loop_var: outer_item
+
+ 
+    - name: creating directory for users
+      command: mkdir "{{item.split(',')[1]}}"
+      args:
+        chdir: /var/lib/awx/projects
+      loop: "{{user_data}}"
+      ignore_errors: true
+
+    - name: creating projects for users
+      command: tower-cli project create --name Project-"{{item.split(',')[1]}}" --organization Default --scm-type manual --local-path "{{item.split(',')[1]}}"
+      loop: "{{user_data}}"
+      ignore_errors: true
+
+
+    - name: associate use permission of project for their particular user
+      command: tower-cli role grant --type 'use' --user "{{item.split(',')[0]}}" --project Project-"{{item.split(',')[1]}}"
+      loop: "{{user_data}}"
+      ignore_errors: true
+
+
+    - name: create organizaton
+      tower_organization:
+        name: "{{item}}"
+        state: present
+        tower_config_file: "~/.tower_cli.cfg"
+      loop: "{{projects.stdout_lines}}"
+
+    - name: Associating user with organization
+      command: tower-cli organization associate --user="{{item.split(',')[0]}}" --organization="{{item.split(',')[2]}}"
+      ignore_errors: true
+      loop: "{{user_data}}"
+      when: item.split(',')[2] != "null"
+
+      #    - name: credential list
+      # command: tower-cli credential list
+      # register: cred_list
+
+      # - name: creating credentials
+      #tower_credential:
+      #  name: "{{item}}"
+      #  organization: "{{item}}"
+      #  kind: openstack
+      #  state: present
+      #  username: admin
+      #  password: c0ntrail123
+      #   host: https://172.31.248.11:5000/v3 
+        #  project: "{{item}}"
+        #  domain: admin_domain
+        # user: admin
+        # tower_verify_ssl: no
+        # tower_config_file: "~/.tower_cli.cfg"
+        # loop: "{{projects.stdout_lines}}"
+        # when: item not in "{{cred_list}}"
+        #
+    - name: creating credentials
+      command: tower-cli credential create --name="{{item}}" --credential-type="OpenStack" --organization="{{item}}" --inputs '{"username":"admin", "password":"c0ntrail123", "host":"https://172.31.248.11:5000/v3", "project":"{{item}}", "domain":"admin_domain", "verify_ssl":false}'
+      ignore_errors: true
+      loop: "{{projects.stdout_lines}}"
+
+    - tower_inventory:
+        name: "{{item}}"
+        organization: "{{item}}"
+        state: present
+        tower_config_file: "~/.tower_cli.cfg"
+      loop: "{{projects.stdout_lines}}"
+
+    - name: Add tower inventory source
+      tower_inventory_source:
+        name: source
+        inventory: "{{item}}"
+        credential: "{{item}}"
+        source: openstack
+        update_on_launch: true
+        overwrite: true
+        source_vars: '{ private: false }'
+        state: present
+        validate_certs: false
+      loop: "{{projects.stdout_lines}}"
+
+    - name: Associate type as use to user in inventory
+      command: tower-cli role grant --type 'use' --user "{{item.split(',')[0]}}" --inventory "{{item.split(',')[2]}}"
+      ignore_errors: true
+      loop: "{{user_data}}"
+      when: item.split(',')[2] != "null"
+
+    - name:  Associate type as use to user in credentials
+      command: tower-cli role grant --type 'use' --user "{{item.split(',')[0]}}" --credential "{{item.split(',')[2]}}"
+      ignore_errors: true
+      loop: "{{user_data}}"
+      when: item.split(',')[2] != "null"
+
+    - name: Associate type as project admin to user in organization
+      command:  tower-cli role grant --type 'project_admin' --user "{{item.split(',')[0]}}" --organization "{{item.split(',')[2]}}"
+      ignore_errors: true
+      loop: "{{user_data}}"
+      when: item.split(',')[2] != "null"
+
+    - name: Associate type as workflow admin to user in organization
+      command:  tower-cli role grant --type 'workflow_admin' --user "{{item.split(',')[0]}}" --organization "{{item.split(',')[2]}}"
+      ignore_errors: true
+      loop: "{{user_data}}"
+      when: item.split(',')[2] != "null"
+
+    - name: Associate type as excute to user in organization
+      command:  tower-cli role grant --type 'execute' --user "{{item.split(',')[0]}}" --organization "{{item.split(',')[2]}}"
+      ignore_errors: true
+      loop: "{{user_data}}"
+      when: item.split(',')[2] != "null"
+
+    - name: Associate type as execute to user in job template
+      include_tasks: /var/lib/awx/projects/automate/template_loop.yml
+      ignore_errors: true
+      loop: "{{user_data}}"
+      loop_control:
+        loop_var: outer_item
+      when: outer_item.split(',')[1] != "null"
+

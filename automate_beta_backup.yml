@@ -1,0 +1,32 @@
+---
+- hosts: all
+  gather_facts: true
+  vars:
+    user_data: []
+    host: []
+  tasks:
+    - command: python projects_beta.py
+      args:
+        chdir: /var/lib/awx/projects/automate
+      register: projects
+
+    - name: create organizaton
+      tower_organization:
+        name: "{{item}}"
+        state: present
+        tower_config_file: "~/.tower_cli.cfg"
+      loop: "{{projects.stdout_lines}}"
+
+    - tower_inventory:
+        name: "{{item}}"
+        organization: "{{item}}"
+        state: present
+        tower_config_file: "~/.tower_cli.cfg"
+      loop: "{{projects.stdout_lines}}"
+
+    - name: adding hosts to inventory
+      include_tasks: /var/lib/awx/projects/automate/beta_add_hosts.yml
+      loop: "{{projects.stdout_lines}}"
+      loop_control:
+        loop_var: outer_item
+

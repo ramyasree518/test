@@ -1,0 +1,109 @@
+---
+- hosts: all
+  gather_facts: true
+  vars:
+    user_data: []
+    host: []
+    u_d1: []
+    inst_id: []
+    o_host: []
+    del_host: []
+    user_data: []
+    tower_host: []
+    u_d1: []
+    project_name: "{{project_name}}"
+    template_list:
+      - "apache_ubuntu_ComplianceCheck"
+      - "apache_ubuntu_update"
+      - "apache_ubuntu_Status_check"
+  tasks:
+    - name: create organizaton
+      tower_organization:
+        name: "{{project_name}}"
+        state: present
+        tower_config_file: "~/.tower_cli.cfg"
+      ignore_errors: true
+
+    - name: create team for all openstack beta projects
+      command: tower-cli team create --name "{{project_name}}" --organization "{{project_name}}"
+      
+    - tower_inventory:
+        name: "{{project_name}}"
+        organization: "{{project_name}}"
+        state: present
+        tower_config_file: "~/.tower_cli.cfg"
+
+
+    - shell: 'source openrc.sh && openstack server list --project "{{project_name}}" -c ID -c Networks -f value'
+      args:
+        executable: /bin/bash
+      register: var
+
+    - name: variable
+      set_fact:
+        o_host: "{{o_host + [item]}}"
+      loop: "{{var.stdout_lines}}"
+      when: item.split()[1] != '{}'
+
+    - name: flitering instance id,internal ips
+      set_fact:
+        user_data: "{{ user_data}} + ['{{item.split(' ')[0]}},{{item.split(':')[1].split(',')[0].replace('[', '').replace(']}', '').replace(']', '').strip().replace(\"'\",'')}},{{item.split(':')[1].split(',')[1].replace('[', '').replace(']}', '').replace(']','').strip().replace(\"'\",'')}}'] "
+      loop: "{{o_host}}"
+      ignore_errors: true
+      when: item.split(':')[1].split(',')[1] is defined
+    - name: flitering instance id,internal ips with floating ips
+      set_fact:
+        user_data: "{{ user_data}} + ['{{item.split(' ')[0]}},{{item.split(':')[1].split(',')[0].replace('[', '').replace(']}', '').replace(']','').strip().replace(\"'\",'')}},none'] "
+      loop: "{{o_host}}"
+      ignore_errors: true
+      when: item.split(':')[1] != " []}" and item.split(':')[1].split(',')[1] is not defined
+
+    - name: adding hosts
+      shell: tower-cli host create --name "{{item.split(',')[1]}}" --inventory '{{project_name}}'
+      loop: "{{user_data}}"
+
+    - name: adding variables to hosts
+      command: tower-cli host modify --name "{{item.split(',')[1]}}" --inventory {{project_name}} --variables '{"ansible_ssh_host":"{{item.split(",")[2]}}"}'
+      loop: "{{user_data}}"
+
+    - name: host list in awx for inventories
+      command: tower-cli host list --inventory "{{project_name}}"
+      register: host_list
+      ignore_errors: true
+    - name: creating list for awx hosts for particular list
+      set_fact:
+        tower_host: "{{tower_host}} + ['{{item.split(' ')[1]}}']"
+      loop: "{{host_list.stdout_lines[3:-1]}}"
+    - name: list for deletimng hosts
+      set_fact:
+        del_host: "{{del_host}} + ['{{item.split(',')[1]}}']"
+      loop: "{{user_data}}"
+    - name: deleting  hosts in inventories
+      command:  tower-cli host delete --name "{{item}}" --inventory "{{project_name}}"
+      loop: "{{tower_host}}"
+      ignore_errors: true
+      when: 'item not in del_host'
+
+
+    - include_tasks: /var/lib/awx/projects/automate/group_beta_project.yml
+      loop: "{{user_data}}"
+      loop_control:
+        loop_var: inst_details
+      ignore_errors: true
+
+
+    - name: Associate type as use to user in inventory
+      command: tower-cli role grant --type 'use' --team "{{project_name}}" --inventory "{{project_name}}"
+      ignore_errors: true
+
+    - name: Associate type as workflow admin to organization in team
+      command:  tower-cli role grant --type 'workflow_admin' --team "{{project_name}}" --organization "{{project_name}}"
+      ignore_errors: true
+
+    - name: Associate type as project admin to organization in team
+      command:  tower-cli role grant --type 'project_admin' --team "{{project_name}}" --organization "{{project_name}}"
+      ignore_errors: true
+
+    - name: Associate type as execute to user in job template
+      include_tasks: /var/lib/awx/projects/automate/template_beta_project_loop.yml
+      ignore_errors: true

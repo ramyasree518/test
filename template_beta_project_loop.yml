@@ -1,0 +1,2 @@
+- command: tower-cli role grant --type "execute" --team  "{{project_name}}" --job-template "{{item}}"
+  loop: "{{template_list}}"

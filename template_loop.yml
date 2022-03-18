@@ -1,0 +1,2 @@
+- command: tower-cli role grant --type "execute" --user "{{outer_item.split(',')[0]}}" --job-template "{{item}}"
+  loop: "{{template_list}}"

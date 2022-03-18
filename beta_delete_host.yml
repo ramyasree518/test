@@ -1,0 +1,31 @@
+- set_fact:
+    host: []
+    tower_host: []
+    o_host: []
+    user_data: []
+  
+- shell: 'source openrc.sh && openstack server list --project "{{outer_item}}" -c Networks -f value'
+  args:
+    executable: /bin/bash
+  register: var
+- name: flitering ips
+  set_fact:
+    user_data: "{{user_data}} + ['{{item.split('=')[1]}}']"
+  loop: "{{var.stdout_lines}}"
+- name: spliting with comma
+  set_fact:
+    o_host: "{{host}} +['{{item.split(',')[0]}}']"
+  loop: "{{user_data}}"
+
+- name: host list of inventory
+  command: tower-cli host list --inventory "{{outer_item}}"
+  register: host_list
+
+- set_facts: 
+    tower_host: "{{tower_host}} + ['{{item.split(' ')[1]}}']"
+  loop: "{{host_list.stdout_lines[3:-1]}}"
+- name: deleting  hosts
+  command:  tower-cli host delete --name "{{item}}" --inventory "{{outer_item}}"
+  loop: "{{o_host}}"
+  when: '"{{item}}" not in {{tower_host}}'
+

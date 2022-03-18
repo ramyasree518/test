@@ -1,0 +1,41 @@
+---
+- hosts: all
+  gather_facts: true
+  vars:
+    user_data : []
+    o_host: []
+    meta_names: []
+    group_names: []
+    inst_meta: " "
+  tasks:
+    - shell: 'source openrc.sh && openstack server list --project Delivery -c ID -c Networks -f value'
+      args:
+        executable: /bin/bash
+      register: var
+    - debug: 
+        msg: "{{var.stdout_lines}}"
+    - name: variable
+      set_fact:
+        o_host: "{{o_host + [item]}}"
+      loop: "{{var.stdout_lines}}"
+      when: item.split()[1] != '{}'
+
+    - name: flitering internal ips
+      set_fact:
+        user_data: "{{ user_data}} + ['{{item.split(' ')[0]}},{{item.split(':')[1].split(',')[0].replace('[', '').replace(']}', '').strip().replace(\"'\",'')}},{{item.split(':')[1].split(',')[1].replace('[', '').replace(']}', '').strip().replace(\"'\",'')}}'] "
+      loop: "{{o_host}}"
+      ignore_errors: true
+      when: item.split(':')[1].split(',')[1] is defined
+
+    - name: flitering internal ips
+      set_fact:
+        user_data: "{{ user_data}} + ['{{item.split(' ')[0]}},{{item.split(':')[1].split(',')[0].replace('[', '').replace(']}', '').strip().replace(\"'\",'')}},none'] "
+      loop: "{{o_host}}"
+      ignore_errors: true
+      when: item.split(':')[1] != " []}" and  item.split(':')[1].split(',')[1] is not defined
+
+
+    - debug:
+        msg: "{{user_data}}"
+
+

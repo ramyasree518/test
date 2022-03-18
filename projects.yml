@@ -1,0 +1,38 @@
+---
+- hosts: all
+  gather_facts: no
+  become_user: yes
+  vars:
+    users: []
+    user1: []
+  tasks: 
+    - command: python users.py
+      args:
+        chdir: /var/lib/awx/projects/automate
+      register: out
+
+    - set_fact:
+        users: "{{users}} + ['{{item.split(',')[0]}}']"
+      loop: "{{out.stdout_lines}}"
+
+    - set_fact:
+        user1: "{{user1}} + ['{{item}}']"
+      loop: "{{users}}"
+      when: '"{{item}}" not in "{{user1}}"'
+
+    - command: rmdir "{{item}}"
+      args:
+        chdir: /var/lib/awx/projects
+      loop: "{{user1}}"
+      ignore_errors: true
+
+    - command: tower-cli project delete --name Project-"{{item}}" --organization Default --scm-type manual --local-path "{{item}}"
+      loop: "{{user1}}"
+      ignore_errors: true
+
+
+    - name: associate project for user
+      command: tower-cli role revoke --type 'use' --user "{{item}}" --project Project-"{{item}}"
+      loop: "{{user1}}"
+      ignore_errors: true
+

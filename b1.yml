@@ -1,0 +1,31 @@
+---
+- hosts: all
+  gather_facts: true
+  vars:
+    o_host: []
+    meta_names: []
+    group_names: []
+    inst_meta: " "
+  tasks:
+    - command: tower-cli host list --inventory Engineering
+      register: host_list
+    
+    - shell: 'source openrc.sh && openstack server list --project Engineering -c ID -c Networks -f value'
+      args:
+        executable: /bin/bash
+      register: var
+
+    - set_fact:
+        o_host: "{{o_host}} + ['{{item.split(' ')[0]}},{{item.split(' ')[1].split('=')[1].replace(',','')}}']" 
+      loop: "{{var.stdout_lines}}"
+      when: item.split('=')[1] is defined
+
+    - include_tasks: /var/lib/awx/projects/automate/b1_inner.yml
+      loop: "{{o_host}}"
+      loop_control:
+        loop_var: inst_details
+      ignore_errors: true
+        #    - debug:
+        #msg: "{{item.split(\"'\")}}"
+        # loop: "{{var.stdout_lines[3:-1]}}"
+

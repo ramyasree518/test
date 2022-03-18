@@ -1,0 +1,11 @@
+---
+- hosts: all
+  gather_facts: true
+  tasks:
+    - command: tower-cli group list --inventory Engineering
+      register: var
+
+    - debug:
+        msg: "{{item.split(' ')[1]}}"
+      loop: "{{var.stdout_lines[3:-1]}}"
+

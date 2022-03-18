@@ -1,0 +1,18 @@
+---
+- hosts: all
+  gather_facts: true
+  tasks:
+    - command: python projects_beta.py
+      args:
+        chdir: /var/lib/awx/projects/automate
+      register: projects
+
+    - name: map teams nd organisations
+      tower_ldap_settings:
+        state: present
+        organization_map:
+          - organization: Solution
+            users: "cn=openstack-cloud-solution-team,OU=Groups,OU=OpenStack,DC=beta,DC=tcsecp,DC=com"
+        tower_host: http://172.10.10.18
+        tower_username: admin_awx
+        tower_password: password

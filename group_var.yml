@@ -1,0 +1,8 @@
+- set_fact:
+    tower_list: "{{tower_list}} + ['{{group_item.split(',')[0]}},{{item}}']"
+  loop: "{{group_names}}"
+  when: group_item.split(',')[1] == item
+
+- debug:
+    msg: "{{item}}"
+  loop: "{{tower_list}}"
